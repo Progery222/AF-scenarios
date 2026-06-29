@@ -1,0 +1,18 @@
+# AF-scenarios — правила для Cursor (краткая версия)
+
+Полная документация: CLAUDE.md, AGENTS.md, TZ.md
+
+- Go 1.22+ микросервис платформы AF (Android Farm)
+- Планировщик сценариев: MinIO (сценарии, variables, state, logs), tick 1 мин
+- gRPC :50059, health/ready :9099
+- Hexagonal: domain → port → service → adapter (minio repository, orchestrator client, llm)
+- Исполнение шагов — только через phone-orchestrator (не executor напрямую)
+- API-сообщения на русском
+
+## Git (GitHub Flow)
+
+- Не пушить в main — только feature-ветка + PR с ревью
+- Коммиты: Conventional Commits (feat:, fix:, refactor:, docs:, test:, chore:)
+- Цикл: pull main → ветка → коммиты → push → PR → CI + апрув → merge
+- Синхронизация: rebase origin/main (личная ветка) или merge (общая)
+- Координация: Issues, Projects (канбан), Assignees

@@ -1,0 +1,114 @@
+id: saxonov-tiktok-daily
+name: "Саксонов: браузер + TikTok (ежедневно)"
+serial: "R5CY331L8NF"
+timezone: "Europe/Moscow"
+
+valid_from: "2026-06-29T00:00:00+03:00"
+valid_until: "2026-07-29T23:59:59+03:00"
+
+schedule:
+  type: daily_recurring
+
+goal:
+  platform: tiktok
+  theme: "Дмитрий Саксонов / blockchain sports"
+  video:
+    source: same_day_screenshots
+    min_screenshots: 5
+    profile: reels_1080x1920
+  hashtags:
+    count: [3, 7]
+    rotate: true
+
+content_sources:
+  browser_research:
+    enabled: true
+    frequency: daily
+    window: "10:00-11:30"
+    browser_package: com.android.chrome
+
+    google:
+      locale_from: phone_proxy
+
+    search_keys:
+      rotation: even
+      items:
+        - "Дмитрий Саксонов"
+        - "Дмитрий Саксонов биография"
+        - "Дмитрий Саксонов кто это"
+        - "Дмитрий Саксонов инстаграмм"
+        - "Дмитрий Саксонов блокчен"
+        - "Дмитрий Саксонов предприниматель"
+        - "Дмитрий Саксонов blockchain sports"
+
+    target_domains:
+      rotation: random
+      match: organic_serp_only
+      max_attempts: 3
+      items:
+        - vc.ru
+        - geekwire.com
+        - kino.mail.ru
+        - kinopoisk.ru
+        - kino-teatr.ru
+
+    session_uniqueness:
+      vary_key_daily: true
+      vary_scroll_pattern: true
+      vary_capture_offsets: true
+
+    capture:
+      minio_prefix: "screenshots/{serial}/{scenario_id}/{date}/"
+      moments:
+        - after_serp
+        - during_scroll
+        - before_close
+
+steps:
+  - id: browser_research_session
+    at: "10:00"
+    window: "10:00-11:30"
+    action: browser_research
+    uses: content_sources.browser_research
+
+  - id: build_video
+    at: "17:50"
+    action: create_video_from_screenshots
+    params:
+      screenshot_prefix: "screenshots/{serial}/{scenario_id}/{today}/"
+      min_count: 5
+
+  - id: open_tiktok
+    at: "17:55"
+    action: open_app
+    params:
+      package: com.zhiliaoapp.musically
+
+  - id: warmup_pre
+    at: "17:56"
+    action: warmup_feed
+    params:
+      profile: tiktok_daily
+      phase: pre_publish
+      until: "18:10"
+
+  - id: post_video
+    at: "18:10"
+    action: publish_content
+    params:
+      from_step: build_video
+      platform: tiktok
+
+  - id: warmup_post
+    at: "18:11"
+    action: warmup_feed
+    params:
+      profile: tiktok_daily
+      phase: post_publish
+      until: "18:25"
+
+  - id: close_tiktok
+    at: "18:25"
+    action: close_app
+    params:
+      package: com.zhiliaoapp.musically
