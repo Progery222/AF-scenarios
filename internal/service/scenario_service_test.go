@@ -17,7 +17,7 @@ func (f fixedClock) Now() time.Time { return f.t }
 func TestScenarioService_PutGetList(t *testing.T) {
 	store := repository.NewMemoryStore()
 	clock := fixedClock{t: time.Date(2026, 6, 29, 12, 0, 0, 0, time.FixedZone("MSK", 3*3600))}
-	svc := service.NewScenarioService(store, clock)
+	svc := service.NewScenarioService(store, clock, nil)
 	ctx := context.Background()
 
 	yaml := `id: test-1
@@ -52,7 +52,7 @@ steps:
 func TestScenarioService_StatusDueStep(t *testing.T) {
 	store := repository.NewMemoryStore()
 	clock := fixedClock{t: time.Date(2026, 6, 29, 12, 0, 0, 0, time.FixedZone("MSK", 3*3600))}
-	svc := service.NewScenarioService(store, clock)
+	svc := service.NewScenarioService(store, clock, nil)
 	ctx := context.Background()
 	yaml := `id: daily
 serial: PHONE-1
@@ -80,7 +80,7 @@ steps:
 func TestScheduler_RunsStep(t *testing.T) {
 	store := repository.NewMemoryStore()
 	clock := fixedClock{t: time.Date(2026, 6, 29, 12, 0, 0, 0, time.FixedZone("MSK", 3*3600))}
-	svc := service.NewScenarioService(store, clock)
+	svc := service.NewScenarioService(store, clock, nil)
 	orch := &recordingOrch{}
 	ctx := context.Background()
 	yaml := `id: daily
@@ -97,7 +97,9 @@ steps:
 	if !due {
 		t.Fatal("step not due")
 	}
-	_ = orch.RunScenarioStep(ctx, "PHONE-1", "daily", step.ID, step.Action, nil)
+	_, _ = orch.RunScenarioStep(ctx, port.RunStepInput{
+		Serial: "PHONE-1", ScenarioID: "daily", StepID: step.ID, Action: step.Action,
+	})
 	_ = svc.MarkStepDone(ctx, "PHONE-1", "daily", step.ID)
 	if len(orch.calls) != 1 {
 		t.Fatalf("orch calls: %d", len(orch.calls))
@@ -112,9 +114,9 @@ type recordingOrch struct {
 	calls []string
 }
 
-func (r *recordingOrch) RunScenarioStep(_ context.Context, serial, scenarioID, stepID, action string, _ map[string]string) error {
-	r.calls = append(r.calls, serial+"/"+scenarioID+"/"+stepID+"/"+action)
-	return nil
+func (r *recordingOrch) RunScenarioStep(_ context.Context, in port.RunStepInput) (port.RunStepResult, error) {
+	r.calls = append(r.calls, in.Serial+"/"+in.ScenarioID+"/"+in.StepID+"/"+in.Action)
+	return port.RunStepResult{Status: "completed"}, nil
 }
 
 var _ port.OrchestratorClient = (*recordingOrch)(nil)

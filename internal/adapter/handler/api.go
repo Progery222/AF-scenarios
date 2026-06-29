@@ -158,12 +158,20 @@ func (h *API) scenarios(w http.ResponseWriter, r *http.Request) {
 		if params == nil {
 			params = map[string]string{}
 		}
-		if err := h.orch.RunScenarioStep(r.Context(), serial, scenarioID, step.ID, step.Action, params); err != nil {
+		files, _ := h.svc.Get(r.Context(), serial, scenarioID)
+		state, _ := h.store.GetState(r.Context(), serial, scenarioID)
+		result, err := h.orch.RunScenarioStep(r.Context(), port.RunStepInput{
+			Serial: serial, ScenarioID: scenarioID, StepID: step.ID, Action: step.Action,
+			Params: params, Uses: step.Uses,
+			VariablesYAML: files.VariablesYAML, ScenarioYAML: files.ScenarioYAML,
+			ScreenshotKeys: state.ScreenshotKeys, VideoOutputKey: state.VideoOutputKey,
+		})
+		if err != nil {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 			return
 		}
-		_ = h.svc.MarkStepDone(r.Context(), serial, scenarioID, step.ID)
-		writeJSON(w, http.StatusOK, map[string]string{"message": "шаг запущен", "step_id": stepID})
+		_ = h.svc.ApplyStepResult(r.Context(), serial, scenarioID, step.ID, result)
+		writeJSON(w, http.StatusOK, map[string]any{"message": "шаг запущен", "step_id": stepID, "result": result})
 	default:
 		http.NotFound(w, r)
 	}

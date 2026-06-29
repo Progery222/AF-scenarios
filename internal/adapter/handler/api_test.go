@@ -16,7 +16,7 @@ import (
 
 func TestAPI_PutGetScenario(t *testing.T) {
 	store := repository.NewMemoryStore()
-	svc := service.NewScenarioService(store, port.RealClock{})
+	svc := service.NewScenarioService(store, port.RealClock{}, nil)
 	api := handler.NewAPI(svc, store, noopOrch{}, nil)
 
 	yaml := `id: api-test
@@ -48,6 +48,6 @@ steps:
 
 type noopOrch struct{}
 
-func (noopOrch) RunScenarioStep(context.Context, string, string, string, string, map[string]string) error {
-	return nil
+func (noopOrch) RunScenarioStep(context.Context, port.RunStepInput) (port.RunStepResult, error) {
+	return port.RunStepResult{Status: "completed"}, nil
 }

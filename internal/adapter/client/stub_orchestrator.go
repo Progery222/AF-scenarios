@@ -15,7 +15,7 @@ func NewStubOrchestrator(log port.Logger) *StubOrchestrator {
 	return &StubOrchestrator{log: log}
 }
 
-func (s *StubOrchestrator) RunScenarioStep(ctx context.Context, serial, scenarioID, stepID, action string, params map[string]string) error {
-	s.log.Info("RunScenarioStep (stub)", "serial", serial, "scenario", scenarioID, "step", stepID, "action", action)
-	return nil
+func (s *StubOrchestrator) RunScenarioStep(ctx context.Context, in port.RunStepInput) (port.RunStepResult, error) {
+	s.log.Info("RunScenarioStep (stub)", "serial", in.Serial, "scenario", in.ScenarioID, "step", in.StepID, "action", in.Action)
+	return port.RunStepResult{Status: "completed", Message: "stub"}, nil
 }

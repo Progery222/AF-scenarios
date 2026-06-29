@@ -60,6 +60,8 @@ func (s *Scheduler) tick(ctx context.Context) {
 		if err != nil || !due {
 			continue
 		}
+		files, _ := s.scenario.Get(ctx, ref.Serial, ref.ScenarioID)
+		state, _ := s.repo.GetState(ctx, ref.Serial, ref.ScenarioID)
 		s.log.Info("запуск шага сценария", "serial", ref.Serial, "scenario", ref.ScenarioID, "step", step.ID, "action", step.Action)
 		entry := domain.LogEntry{
 			TS:         now.Format(time.RFC3339),
@@ -76,7 +78,19 @@ func (s *Scheduler) tick(ctx context.Context) {
 		if params == nil {
 			params = map[string]string{}
 		}
-		if err := s.orch.RunScenarioStep(ctx, ref.Serial, ref.ScenarioID, step.ID, step.Action, params); err != nil {
+		result, err := s.orch.RunScenarioStep(ctx, port.RunStepInput{
+			Serial:         ref.Serial,
+			ScenarioID:     ref.ScenarioID,
+			StepID:         step.ID,
+			Action:         step.Action,
+			Params:         params,
+			Uses:           step.Uses,
+			VariablesYAML:  files.VariablesYAML,
+			ScenarioYAML:   files.ScenarioYAML,
+			ScreenshotKeys: state.ScreenshotKeys,
+			VideoOutputKey: state.VideoOutputKey,
+		})
+		if err != nil {
 			s.log.Error("RunScenarioStep", "error", err, "step", step.ID)
 			fail := entry
 			fail.Status = "failed"
@@ -84,9 +98,12 @@ func (s *Scheduler) tick(ctx context.Context) {
 			_ = s.scenario.AppendLogEntry(ctx, ref.Serial, ref.ScenarioID, fail)
 			continue
 		}
-		_ = s.scenario.MarkStepDone(ctx, ref.Serial, ref.ScenarioID, step.ID)
+		_ = s.scenario.ApplyStepResult(ctx, ref.Serial, ref.ScenarioID, step.ID, result)
 		done := entry
 		done.Status = "completed"
+		if result.Message != "" {
+			done.Error = result.Message
+		}
 		line, _ := json.Marshal(done)
 		_ = s.repo.AppendLog(ctx, ref.Serial, ref.ScenarioID, now.Format("2006-01-02"), append(line, '\n'))
 	}

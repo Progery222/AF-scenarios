@@ -46,7 +46,11 @@ func main() {
 	}
 
 	clock := port.RealClock{}
-	scenarioSvc := service.NewScenarioService(repo, clock)
+	var llm port.LLMClient
+	if cfg.OpenAIAPIKey != "" || cfg.LLMAPIKey != "" {
+		llm = client.NewOpenAILLM(cfg, logger)
+	}
+	scenarioSvc := service.NewScenarioService(repo, clock, llm)
 
 	var orch port.OrchestratorClient = client.NewOrchestratorHTTP(cfg, logger)
 	if strings.EqualFold(os.Getenv("ORCHESTRATOR_MODE"), "stub") {

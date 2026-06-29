@@ -24,6 +24,9 @@ type Config struct {
 	SchedulerEnabled      bool
 	LLMProvider           string
 	LLMAPIKey             string
+	OpenAIAPIKey          string
+	OpenAIBaseURL         string
+	OpenAIModel           string
 }
 
 func Load() Config {
@@ -45,6 +48,9 @@ func Load() Config {
 		SchedulerEnabled:     envBool("SCHEDULER_ENABLED", true),
 		LLMProvider:          env("LLM_PROVIDER", "openai"),
 		LLMAPIKey:            env("LLM_API_KEY", ""),
+		OpenAIAPIKey:         env("OPENAI_API_KEY", ""),
+		OpenAIBaseURL:        env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+		OpenAIModel:          env("OPENAI_MODEL", "gpt-4o-mini"),
 	}
 }
 

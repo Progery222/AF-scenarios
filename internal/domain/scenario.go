@@ -127,6 +127,8 @@ type DayState struct {
 	TargetDomainsTried []string         `json:"target_domains_tried,omitempty"`
 	SessionSeed       int64             `json:"session_seed"`
 	ScreenshotKeys    []string          `json:"screenshot_keys,omitempty"`
+	VideoOutputKey    string            `json:"video_output_key,omitempty"`
+	VideoJobID        string            `json:"video_job_id,omitempty"`
 	StepsDoneToday    []string          `json:"steps_done_today,omitempty"`
 	StepIdempotency   map[string]string `json:"step_idempotency,omitempty"`
 }

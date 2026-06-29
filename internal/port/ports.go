@@ -28,8 +28,29 @@ type ScenarioRepository interface {
 	ParseScenario(ctx context.Context, serial, scenarioID string) (domain.ScenarioDoc, error)
 }
 
+type RunStepInput struct {
+	Serial         string
+	ScenarioID     string
+	StepID         string
+	Action         string
+	Params         map[string]string
+	Uses           string
+	VariablesYAML  string
+	ScenarioYAML   string
+	ScreenshotKeys []string
+	VideoOutputKey string
+}
+
+type RunStepResult struct {
+	Status         string
+	Message        string
+	ScreenshotKeys []string
+	VideoJobID     string
+	VideoOutputKey string
+}
+
 type OrchestratorClient interface {
-	RunScenarioStep(ctx context.Context, serial, scenarioID, stepID, action string, params map[string]string) error
+	RunScenarioStep(ctx context.Context, in RunStepInput) (RunStepResult, error)
 }
 
 type LLMClient interface {

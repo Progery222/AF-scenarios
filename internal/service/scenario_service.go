@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mobilefarm/af/scenarios/internal/domain"
@@ -13,10 +14,11 @@ import (
 type ScenarioService struct {
 	repo  port.ScenarioRepository
 	clock port.Clock
+	llm   port.LLMClient
 }
 
-func NewScenarioService(repo port.ScenarioRepository, clock port.Clock) *ScenarioService {
-	return &ScenarioService{repo: repo, clock: clock}
+func NewScenarioService(repo port.ScenarioRepository, clock port.Clock, llm port.LLMClient) *ScenarioService {
+	return &ScenarioService{repo: repo, clock: clock, llm: llm}
 }
 
 type ScenarioFiles struct {
@@ -167,6 +169,26 @@ func (s *ScenarioService) MarkStepDone(ctx context.Context, serial, scenarioID, 
 	return s.repo.PutState(ctx, serial, scenarioID, state)
 }
 
+func (s *ScenarioService) ApplyStepResult(ctx context.Context, serial, scenarioID, stepID string, result port.RunStepResult) error {
+	if err := s.MarkStepDone(ctx, serial, scenarioID, stepID); err != nil {
+		return err
+	}
+	if len(result.ScreenshotKeys) == 0 && result.VideoOutputKey == "" && result.VideoJobID == "" {
+		return nil
+	}
+	state, _ := s.repo.GetState(ctx, serial, scenarioID)
+	if len(result.ScreenshotKeys) > 0 {
+		state.ScreenshotKeys = result.ScreenshotKeys
+	}
+	if result.VideoOutputKey != "" {
+		state.VideoOutputKey = result.VideoOutputKey
+	}
+	if result.VideoJobID != "" {
+		state.VideoJobID = result.VideoJobID
+	}
+	return s.repo.PutState(ctx, serial, scenarioID, state)
+}
+
 func FormatMSK(t time.Time) string {
 	loc := time.FixedZone("MSK", 3*3600)
 	return t.In(loc).Format("15:04:05")
@@ -232,8 +254,23 @@ func (s *ScenarioService) DueStep(ctx context.Context, serial, scenarioID string
 	return domain.StepDoc{}, false, nil
 }
 
-func (s *ScenarioService) GeneratePreview(_ context.Context, prompt, serial string) (ScenarioFiles, []string, error) {
-	warnings := []string{"ИИ-генератор в режиме шаблона; подключите LLM_API_KEY для полной генерации"}
+func (s *ScenarioService) GeneratePreview(ctx context.Context, prompt, serial string) (ScenarioFiles, []string, error) {
+	if s.llm != nil {
+		scYAML, varYAML, warnings, err := s.llm.GenerateScenario(ctx, prompt, serial)
+		if err == nil && strings.TrimSpace(scYAML) != "" {
+			return ScenarioFiles{ScenarioYAML: scYAML, VariablesYAML: varYAML}, warnings, nil
+		}
+		if err != nil {
+			warnings := []string{err.Error()}
+			files, w2, _ := s.generateTemplate(prompt, serial)
+			return files, append(warnings, w2...), nil
+		}
+	}
+	return s.generateTemplate(prompt, serial)
+}
+
+func (s *ScenarioService) generateTemplate(prompt, serial string) (ScenarioFiles, []string, error) {
+	warnings := []string{"ИИ-генератор недоступен; возвращён шаблон. Задайте OPENAI_API_KEY / LLM_API_KEY."}
 	files := ScenarioFiles{
 		ScenarioYAML: fmt.Sprintf(`id: generated-%s
 name: "Сгенерировано из промпта"
