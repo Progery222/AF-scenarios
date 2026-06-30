@@ -35,6 +35,22 @@ func TestMergeVariablesYAML_EmptyUsesTemplate(t *testing.T) {
 	}
 }
 
+func TestMergeVariablesYAML_RepairsBracketPairs(t *testing.T) {
+	merged, warns := service.MergeVariablesYAML(`warmup_feed:
+  like_probability: [0 0]
+  scroll_interval_sec: [3 12]
+`)
+	for _, w := range warns {
+		if strings.Contains(w, "не парсится") {
+			t.Fatalf("unexpected warn: %v", warns)
+		}
+	}
+	var parsed map[string]any
+	if err := yaml.Unmarshal([]byte(merged), &parsed); err != nil {
+		t.Fatalf("parse merged: %v\n%s", err, merged)
+	}
+}
+
 func TestMergeVariablesYAML_SanitizesMisplacedWarmupKeys(t *testing.T) {
 	broken := `warmup_profiles:
   like_probability: [0, 0]

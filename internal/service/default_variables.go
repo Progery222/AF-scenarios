@@ -31,7 +31,8 @@ func MergeVariablesYAML(generated string) (string, []string) {
 	}
 	custom := map[string]any{}
 	if strings.TrimSpace(generated) != "" {
-		if err := yaml.Unmarshal([]byte(generated), &custom); err != nil {
+		repaired := repairLLMYAML(generated)
+		if err := yaml.Unmarshal([]byte(repaired), &custom); err != nil {
 			warnings = append(warnings, "variables.yaml от LLM не парсится — подставлен шаблон")
 			out, err := yaml.Marshal(base)
 			if err != nil {

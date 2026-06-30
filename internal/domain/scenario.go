@@ -158,6 +158,8 @@ type LogEntry struct {
 	StepID      string `json:"step_id,omitempty"`
 	Status      string `json:"status"`
 	Action      string `json:"action,omitempty"`
+	Event       string `json:"event,omitempty"`
+	Detail      string `json:"detail,omitempty"`
 	DurationSec int    `json:"duration_sec,omitempty"`
 	Error       string `json:"error,omitempty"`
 }

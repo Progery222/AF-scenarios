@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mobilefarm/af/scenarios/internal/adapter/handler"
 	"github.com/mobilefarm/af/scenarios/internal/adapter/repository"
@@ -43,6 +44,49 @@ steps:
 	api.Routes().ServeHTTP(w2, req2)
 	if w2.Code != http.StatusOK {
 		t.Fatalf("get: %d", w2.Code)
+	}
+}
+
+func TestAPI_AppendScenarioLog(t *testing.T) {
+	store := repository.NewMemoryStore()
+	svc := service.NewScenarioService(store, port.RealClock{}, nil)
+	api := handler.NewAPI(svc, store, noopOrch{}, nil)
+
+	putBody, _ := json.Marshal(map[string]string{
+		"scenario_yaml": `id: log-test
+name: Log
+serial: S1
+steps:
+  - id: a
+    at: "10:00"
+    action: wait
+`,
+		"variables_yaml": "",
+	})
+	req := httptest.NewRequest(http.MethodPut, "/scenarios/S1/log-test", bytes.NewReader(putBody))
+	w := httptest.NewRecorder()
+	api.Routes().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("put: %d", w.Code)
+	}
+
+	logBody, _ := json.Marshal(map[string]string{
+		"status": "swipe_done",
+		"action": "warmup_feed",
+		"step_id": "scroll",
+		"event":  "swipe_done",
+		"detail": "changed=true",
+	})
+	req2 := httptest.NewRequest(http.MethodPost, "/scenarios/S1/log-test/log", bytes.NewReader(logBody))
+	w2 := httptest.NewRecorder()
+	api.Routes().ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("log append: %d %s", w2.Code, w2.Body.String())
+	}
+
+	logs, err := svc.GetLogs(context.Background(), "S1", "log-test", time.Now().Format("2006-01-02"))
+	if err != nil || logs == "" {
+		t.Fatalf("logs missing: err=%v logs=%q", err, logs)
 	}
 }
 

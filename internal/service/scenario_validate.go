@@ -117,7 +117,8 @@ func ValidateScenarioYAML(scenarioYAML, variablesYAML string, serial string, now
 
 	if strings.TrimSpace(variablesYAML) != "" {
 		var vars map[string]any
-		if err := yaml.Unmarshal([]byte(variablesYAML), &vars); err != nil {
+		varYAML := repairLLMYAML(variablesYAML)
+		if err := yaml.Unmarshal([]byte(varYAML), &vars); err != nil {
 			result.Warnings = append(result.Warnings, "variables.yaml не парсится: "+err.Error())
 		}
 	}

@@ -16,7 +16,7 @@ var durationSuffixRe = regexp.MustCompile(`^(\d+)\s*s(?:ec)?$`)
 // NormalizeScenarioYAML исправляет типичные ошибки LLM и приводит YAML к ожидаемой схеме.
 func NormalizeScenarioYAML(raw, serial string, now time.Time) (string, []string) {
 	warnings := []string{}
-	raw = strings.TrimSpace(raw)
+	raw = repairLLMYAML(strings.TrimSpace(raw))
 	if raw == "" {
 		return raw, warnings
 	}

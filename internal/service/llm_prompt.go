@@ -28,6 +28,8 @@ func BuildLLMSystemPrompt(now time.Time) string {
 - steps[]: id, action, params (строки)
   - sequential: только ПЕРВЫЙ шаг имеет at (время старта цепочки); остальные — after_previous: true, БЕЗ at
   - scheduled: каждый шаг с at (HH:MM)
+  - at ВСЕГДА в кавычках: at: "16:20" — НИКОГДА at: {16:20} (фигурные скобки ломают YAML)
+  - в params и на шагах ВСЕГДА key: value с двоеточием (network: tiktok, НЕ network tiktok)
 
 Допустимые action (ТОЛЬКО эти, без выдумок):
 - wait (params.duration_sec)
@@ -52,6 +54,8 @@ warmup_feed:
   view_duration_sec: [5, 12]
   like_probability: [0, 0]
   swipe_pause_ms: [300, 800]
+
+В массивах ОБЯЗАТЕЛЬНО запятые: [0, 0] а не [0 0].
 
 Пример sequential (TikTok, старт 13:26 МСК, цепочка без фиксированных минут):
 scenario_yaml:
