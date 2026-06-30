@@ -69,3 +69,27 @@ func sequentialStepDue(step domain.StepDoc, index int, steps []domain.StepDoc, n
 	}
 	return true
 }
+
+// sequentialStepDueRunNow — цепочка без проверки at (ручной «Запустить сейчас»).
+func sequentialStepDueRunNow(step domain.StepDoc, index int, steps []domain.StepDoc, state domain.DayState) bool {
+	if stepDoneToday(step.ID, state) {
+		return false
+	}
+	if state.StepRunning != "" && state.StepRunning != step.ID {
+		return false
+	}
+	if index == 0 {
+		return true
+	}
+	prev := steps[index-1]
+	if !stepDoneToday(prev.ID, state) {
+		return false
+	}
+	if step.RequiresPreviousSuccess && stepFailedToday(prev.ID, state) {
+		return false
+	}
+	if stepFailedToday(prev.ID, state) && !step.AfterFailure && step.Action != "close_app" {
+		return false
+	}
+	return true
+}

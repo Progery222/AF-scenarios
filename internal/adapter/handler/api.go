@@ -112,6 +112,26 @@ func (h *API) scenarios(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, items)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "run-now" {
+		if r.Method != http.MethodPost {
+			http.Error(w, "только POST", http.StatusMethodNotAllowed)
+			return
+		}
+		if h.sched == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "планировщик не настроен"})
+			return
+		}
+		var body struct {
+			ScenarioIDs []string `json:"scenario_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.ScenarioIDs) == 0 {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "укажите scenario_ids"})
+			return
+		}
+		results := h.sched.RunNow(r.Context(), serial, body.ScenarioIDs)
+		writeJSON(w, http.StatusOK, map[string]any{"serial": serial, "results": results})
+		return
+	}
 	if len(parts) == 2 && parts[1] == "active" {
 		switch r.Method {
 		case http.MethodGet:
