@@ -9,6 +9,7 @@ import (
 
 	"github.com/mobilefarm/af/scenarios/internal/domain"
 	"github.com/mobilefarm/af/scenarios/internal/port"
+	"gopkg.in/yaml.v3"
 )
 
 type ScenarioService struct {
@@ -37,8 +38,37 @@ type ScenarioStatus struct {
 	Timezone     string   `json:"timezone,omitempty"`
 }
 
-func (s *ScenarioService) List(ctx context.Context, serial string) ([]domain.ScenarioSummary, error) {
-	return s.repo.List(ctx, serial)
+type ScenarioListResult struct {
+	Serial           string                  `json:"serial"`
+	ActiveScenarioID string                  `json:"active_scenario_id,omitempty"`
+	Items            []domain.ScenarioSummary `json:"items"`
+}
+
+func (s *ScenarioService) List(ctx context.Context, serial string) (ScenarioListResult, error) {
+	items, err := s.repo.List(ctx, serial)
+	if err != nil {
+		return ScenarioListResult{}, err
+	}
+	active, _ := s.repo.GetActiveScenarioID(ctx, serial)
+	if active == "" && len(items) == 1 {
+		_ = s.repo.SetActiveScenarioID(ctx, serial, items[0].ID)
+		active = items[0].ID
+	}
+	for i := range items {
+		items[i].IsActive = items[i].ID == active
+	}
+	return ScenarioListResult{Serial: serial, ActiveScenarioID: active, Items: items}, nil
+}
+
+func (s *ScenarioService) GetActive(ctx context.Context, serial string) (string, error) {
+	return s.repo.GetActiveScenarioID(ctx, serial)
+}
+
+func (s *ScenarioService) SetActive(ctx context.Context, serial, scenarioID string) error {
+	if err := s.repo.SetActiveScenarioID(ctx, serial, scenarioID); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *ScenarioService) Get(ctx context.Context, serial, scenarioID string) (ScenarioFiles, error) {
@@ -50,7 +80,27 @@ func (s *ScenarioService) Get(ctx context.Context, serial, scenarioID string) (S
 }
 
 func (s *ScenarioService) Put(ctx context.Context, serial, scenarioID string, files ScenarioFiles) error {
-	return s.repo.Put(ctx, serial, scenarioID, []byte(files.ScenarioYAML), []byte(files.VariablesYAML))
+	norm, _ := NormalizeScenarioYAML(files.ScenarioYAML, serial, s.clock.Now())
+	var doc domain.ScenarioDoc
+	if err := yaml.Unmarshal([]byte(norm), &doc); err != nil {
+		return fmt.Errorf("%w: %v", domain.ErrInvalidYAML, err)
+	}
+	if strings.TrimSpace(doc.ID) == "" {
+		return domain.ErrMissingID
+	}
+	varYAML, _ := MergeVariablesYAML(files.VariablesYAML)
+	if err := s.repo.Put(ctx, serial, scenarioID, []byte(norm), []byte(varYAML)); err != nil {
+		return err
+	}
+	active, _ := s.repo.GetActiveScenarioID(ctx, serial)
+	if active == "" {
+		_ = s.repo.SetActiveScenarioID(ctx, serial, scenarioID)
+	}
+	return nil
+}
+
+func (s *ScenarioService) Validate(ctx context.Context, scenarioYAML, variablesYAML, serial string, normalize bool) ValidateResult {
+	return ValidateScenarioYAML(scenarioYAML, variablesYAML, serial, s.clock.Now(), normalize)
 }
 
 func (s *ScenarioService) Delete(ctx context.Context, serial, scenarioID string) error {
@@ -78,7 +128,7 @@ func (s *ScenarioService) Status(ctx context.Context, serial, scenarioID string)
 	localNow := now.In(loc)
 	state, _ := s.repo.GetState(ctx, serial, scenarioID)
 	active := inValidRange(localNow, doc.ValidFrom, doc.ValidUntil)
-	cur, next := resolveSteps(doc.Steps, localNow, state)
+	cur, next := resolveSteps(doc.Steps, localNow, state, IsSequentialExecution(doc))
 	return ScenarioStatus{
 		Serial:      serial,
 		ScenarioID:  scenarioID,
@@ -107,7 +157,26 @@ func inValidRange(now time.Time, from, until string) bool {
 	return true
 }
 
-func resolveSteps(steps []domain.StepDoc, now time.Time, state domain.DayState) (current, next string) {
+func resolveSteps(steps []domain.StepDoc, now time.Time, state domain.DayState, sequential bool) (current, next string) {
+	if sequential {
+		for i, st := range steps {
+			if stepDoneToday(st.ID, state) {
+				continue
+			}
+			if sequentialStepDue(st, i, steps, now, state) {
+				current = st.ID
+				for j := i + 1; j < len(steps); j++ {
+					if !stepDoneToday(steps[j].ID, state) {
+						next = steps[j].ID
+						break
+					}
+				}
+				return current, next
+			}
+			return "", st.ID
+		}
+		return "", ""
+	}
 	today := now.Format("15:04")
 	for _, st := range steps {
 		if stepDoneToday(st.ID, state) {
@@ -147,6 +216,24 @@ func (s *ScenarioService) AppendLogEntry(ctx context.Context, serial, scenarioID
 }
 
 func (s *ScenarioService) MarkStepDone(ctx context.Context, serial, scenarioID, stepID string) error {
+	return s.markStepFinished(ctx, serial, scenarioID, stepID, false)
+}
+
+func (s *ScenarioService) MarkStepFailed(ctx context.Context, serial, scenarioID, stepID string) error {
+	return s.markStepFinished(ctx, serial, scenarioID, stepID, true)
+}
+
+func (s *ScenarioService) SetStepRunning(ctx context.Context, serial, scenarioID, stepID string) error {
+	state, _ := s.repo.GetState(ctx, serial, scenarioID)
+	date := s.clock.Now().Format("2006-01-02")
+	if state.Date != date {
+		state = domain.DayState{Date: date, StepIdempotency: map[string]string{}}
+	}
+	state.StepRunning = stepID
+	return s.repo.PutState(ctx, serial, scenarioID, state)
+}
+
+func (s *ScenarioService) markStepFinished(ctx context.Context, serial, scenarioID, stepID string, failed bool) error {
 	state, _ := s.repo.GetState(ctx, serial, scenarioID)
 	date := s.clock.Now().Format("2006-01-02")
 	if state.Date != date {
@@ -156,6 +243,7 @@ func (s *ScenarioService) MarkStepDone(ctx context.Context, serial, scenarioID, 
 		state.StepIdempotency = map[string]string{}
 	}
 	state.StepIdempotency[stepID] = date
+	state.StepRunning = ""
 	found := false
 	for _, id := range state.StepsDoneToday {
 		if id == stepID {
@@ -165,6 +253,18 @@ func (s *ScenarioService) MarkStepDone(ctx context.Context, serial, scenarioID, 
 	}
 	if !found {
 		state.StepsDoneToday = append(state.StepsDoneToday, stepID)
+	}
+	if failed {
+		ff := false
+		for _, id := range state.StepsFailedToday {
+			if id == stepID {
+				ff = true
+				break
+			}
+		}
+		if !ff {
+			state.StepsFailedToday = append(state.StepsFailedToday, stepID)
+		}
 	}
 	return s.repo.PutState(ctx, serial, scenarioID, state)
 }
@@ -243,6 +343,17 @@ func (s *ScenarioService) DueStep(ctx context.Context, serial, scenarioID string
 		return domain.StepDoc{}, false, nil
 	}
 	state, _ := s.repo.GetState(ctx, serial, scenarioID)
+	if state.StepRunning != "" {
+		return domain.StepDoc{}, false, nil
+	}
+	if IsSequentialExecution(doc) {
+		for i, step := range doc.Steps {
+			if sequentialStepDue(step, i, doc.Steps, now, state) {
+				return step, true, nil
+			}
+		}
+		return domain.StepDoc{}, false, nil
+	}
 	for _, step := range doc.Steps {
 		if stepDoneToday(step.ID, state) {
 			continue
@@ -254,23 +365,43 @@ func (s *ScenarioService) DueStep(ctx context.Context, serial, scenarioID string
 	return domain.StepDoc{}, false, nil
 }
 
-func (s *ScenarioService) GeneratePreview(ctx context.Context, prompt, serial string) (ScenarioFiles, []string, error) {
+func (s *ScenarioService) GeneratePreview(ctx context.Context, prompt, serial string) (ScenarioFiles, []string, []StepIssue, error) {
+	var rawFiles ScenarioFiles
+	var baseWarnings []string
 	if s.llm != nil {
 		scYAML, varYAML, warnings, err := s.llm.GenerateScenario(ctx, prompt, serial)
 		if err == nil && strings.TrimSpace(scYAML) != "" {
-			return ScenarioFiles{ScenarioYAML: scYAML, VariablesYAML: varYAML}, warnings, nil
-		}
-		if err != nil {
-			warnings := []string{err.Error()}
+			rawFiles = ScenarioFiles{ScenarioYAML: scYAML, VariablesYAML: varYAML}
+			baseWarnings = warnings
+		} else if err != nil {
 			files, w2, _ := s.generateTemplate(prompt, serial)
-			return files, append(warnings, w2...), nil
+			return files, append([]string{err.Error()}, w2...), nil, nil
 		}
 	}
-	return s.generateTemplate(prompt, serial)
+	if rawFiles.ScenarioYAML == "" {
+		files, w2, _ := s.generateTemplate(prompt, serial)
+		vr := ValidateScenarioYAML(files.ScenarioYAML, files.VariablesYAML, serial, s.clock.Now(), true)
+		return ScenarioFiles{ScenarioYAML: vr.NormalizedScenarioYAML, VariablesYAML: files.VariablesYAML},
+			append(w2, vr.Warnings...), vr.StepIssues, nil
+	}
+	vr := ValidateScenarioYAML(rawFiles.ScenarioYAML, rawFiles.VariablesYAML, serial, s.clock.Now(), true)
+	allWarnings := append(baseWarnings, vr.Warnings...)
+	for _, iss := range vr.StepIssues {
+		if iss.Level == "warning" {
+			allWarnings = append(allWarnings, fmt.Sprintf("%s (%s): %s", iss.StepID, iss.Action, iss.Message))
+		}
+	}
+	scYAML := vr.NormalizedScenarioYAML
+	if scYAML == "" {
+		scYAML = rawFiles.ScenarioYAML
+	}
+	varYAML, mergeWarns := MergeVariablesYAML(rawFiles.VariablesYAML)
+	allWarnings = append(allWarnings, mergeWarns...)
+	return ScenarioFiles{ScenarioYAML: scYAML, VariablesYAML: varYAML}, allWarnings, vr.StepIssues, nil
 }
 
 func (s *ScenarioService) generateTemplate(prompt, serial string) (ScenarioFiles, []string, error) {
-	warnings := []string{"ИИ-генератор недоступен; возвращён шаблон. Задайте OPENAI_API_KEY / LLM_API_KEY."}
+	warnings := []string{"ИИ-генератор недоступен; возвращён шаблон. Задайте LLM_PROVIDER=ollama или OPENAI_API_KEY."}
 	files := ScenarioFiles{
 		ScenarioYAML: fmt.Sprintf(`id: generated-%s
 name: "Сгенерировано из промпта"
@@ -287,10 +418,7 @@ steps:
     params:
       note: %q
 `, serial, serial, time.Now().Format(time.RFC3339), time.Now().AddDate(0, 1, 0).Format(time.RFC3339), prompt),
-		VariablesYAML: `warmup_feed:
-  scroll_interval_sec: [3, 12]
-  view_duration_sec: [5, 25]
-`,
+		VariablesYAML: DefaultTikTokVariablesYAML(),
 	}
 	return files, warnings, nil
 }

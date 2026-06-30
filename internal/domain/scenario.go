@@ -3,11 +3,17 @@ package domain
 import "time"
 
 type ScenarioSummary struct {
-	ID         string `json:"id"`
+	ID         string `json:"id"`                   // ключ хранения (папка в MinIO)
+	YamlID     string `json:"yaml_id,omitempty"`    // id из scenario.yaml, если отличается
 	Name       string `json:"name"`
 	Serial     string `json:"serial"`
 	ValidFrom  string `json:"valid_from,omitempty"`
 	ValidUntil string `json:"valid_until,omitempty"`
+	IsActive   bool   `json:"is_active,omitempty"`
+}
+
+type PhoneScenarioMeta struct {
+	ActiveScenarioID string `json:"active_scenario_id"`
 }
 
 type ScenarioRef struct {
@@ -27,12 +33,15 @@ type ScenarioDoc struct {
 }
 
 type StepDoc struct {
-	ID     string            `yaml:"id"`
-	At     string            `yaml:"at"`
-	Window string            `yaml:"window"`
-	Action string            `yaml:"action"`
-	Uses   string            `yaml:"uses"`
-	Params map[string]string `yaml:"params"`
+	ID                    string            `yaml:"id"`
+	At                    string            `yaml:"at"`
+	Window                string            `yaml:"window"`
+	AfterPrevious         bool              `yaml:"after_previous"`
+	RequiresPreviousSuccess bool            `yaml:"requires_previous_success"`
+	AfterFailure          bool              `yaml:"after_failure"`
+	Action                string            `yaml:"action"`
+	Uses                  string            `yaml:"uses"`
+	Params                map[string]string `yaml:"params"`
 }
 
 type ScheduleType string
@@ -55,8 +64,14 @@ type Scenario struct {
 }
 
 type ScheduleConfig struct {
-	Type ScheduleType
+	Type      ScheduleType `yaml:"type"`
+	Execution string       `yaml:"execution"` // scheduled (default) | sequential
 }
+
+const (
+	ScheduleExecutionScheduled  = "scheduled"
+	ScheduleExecutionSequential = "sequential"
+)
 
 type Goal struct {
 	Platform string
@@ -130,6 +145,8 @@ type DayState struct {
 	VideoOutputKey    string            `json:"video_output_key,omitempty"`
 	VideoJobID        string            `json:"video_job_id,omitempty"`
 	StepsDoneToday    []string          `json:"steps_done_today,omitempty"`
+	StepsFailedToday  []string          `json:"steps_failed_today,omitempty"`
+	StepRunning       string            `json:"step_running,omitempty"`
 	StepIdempotency   map[string]string `json:"step_idempotency,omitempty"`
 }
 

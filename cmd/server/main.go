@@ -47,8 +47,9 @@ func main() {
 
 	clock := port.RealClock{}
 	var llm port.LLMClient
-	if cfg.OpenAIAPIKey != "" || cfg.LLMAPIKey != "" {
-		llm = client.NewOpenAILLM(cfg, logger)
+	if strings.EqualFold(cfg.LLMProvider, "ollama") || cfg.OpenAIAPIKey != "" || cfg.LLMAPIKey != "" {
+		llm = client.NewLLM(cfg, logger)
+		logger.Info("llm enabled", "provider", cfg.LLMProvider, "model", firstLLMModel(cfg))
 	}
 	scenarioSvc := service.NewScenarioService(repo, clock, llm)
 
@@ -87,4 +88,17 @@ func main() {
 	_ = apiServer.Shutdown(shutdownCtx)
 	_ = healthServer.Shutdown(shutdownCtx)
 	logger.Info("shutdown complete")
+}
+
+func firstLLMModel(cfg config.Config) string {
+	if strings.EqualFold(cfg.LLMProvider, "ollama") {
+		if cfg.OllamaModel != "" {
+			return cfg.OllamaModel
+		}
+		return "qwen2.5:7b"
+	}
+	if cfg.OpenAIModel != "" {
+		return cfg.OpenAIModel
+	}
+	return "gpt-4o-mini"
 }

@@ -78,7 +78,36 @@ func (m *MemoryStore) Put(_ context.Context, serial, scenarioID string, scenario
 	return nil
 }
 
-func (m *MemoryStore) Delete(_ context.Context, serial, scenarioID string) error {
+func (m *MemoryStore) activeKey(serial string) string {
+	return serial + "/_active.json"
+}
+
+func (m *MemoryStore) GetActiveScenarioID(_ context.Context, serial string) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	data, ok := m.files[m.activeKey(serial)]
+	if !ok {
+		return "", nil
+	}
+	var meta domain.PhoneScenarioMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return "", nil
+	}
+	return meta.ActiveScenarioID, nil
+}
+
+func (m *MemoryStore) SetActiveScenarioID(ctx context.Context, serial, scenarioID string) error {
+	if _, _, err := m.GetFiles(ctx, serial, scenarioID); err != nil {
+		return err
+	}
+	data, _ := json.Marshal(domain.PhoneScenarioMeta{ActiveScenarioID: scenarioID})
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.files[m.activeKey(serial)] = data
+	return nil
+}
+
+func (m *MemoryStore) Delete(ctx context.Context, serial, scenarioID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	prefix := serial + "/" + scenarioID + "/"
@@ -91,6 +120,12 @@ func (m *MemoryStore) Delete(_ context.Context, serial, scenarioID string) error
 	}
 	if !found {
 		return domain.ErrNotFound
+	}
+	if data, ok := m.files[m.activeKey(serial)]; ok {
+		var meta domain.PhoneScenarioMeta
+		if json.Unmarshal(data, &meta) == nil && meta.ActiveScenarioID == scenarioID {
+			delete(m.files, m.activeKey(serial))
+		}
 	}
 	return nil
 }

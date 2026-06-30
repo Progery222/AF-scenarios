@@ -12,6 +12,7 @@ import (
 
 	"github.com/mobilefarm/af/scenarios/internal/config"
 	"github.com/mobilefarm/af/scenarios/internal/port"
+	"github.com/mobilefarm/af/scenarios/internal/service"
 )
 
 type OpenAILLM struct {
@@ -35,13 +36,9 @@ func NewOpenAILLM(cfg config.Config, log port.Logger) *OpenAILLM {
 
 func (c *OpenAILLM) GenerateScenario(ctx context.Context, prompt, serial string) (string, string, []string, error) {
 	if strings.TrimSpace(c.apiKey) == "" {
-		return "", "", []string{"LLM_API_KEY / OPENAI_API_KEY не задан — используйте шаблон"}, fmt.Errorf("llm api key missing")
+		return "", "", []string{"LLM_API_KEY / OPENAI_API_KEY не задан — используйте шаблон или LLM_PROVIDER=ollama"}, fmt.Errorf("llm api key missing")
 	}
-	system := `Ты генерируешь YAML для AF-scenarios (Android Farm).
-Верни JSON: {"scenario_yaml":"...","variables_yaml":"..."} без markdown.
-scenario_yaml: id, name, serial, timezone Europe/Moscow, valid_from/valid_until (RFC3339 +03:00), schedule daily_recurring, content_sources.browser_research при необходимости, steps с at/window/action/params.
-variables.yaml: warmup_feed, warmup_profiles, browser_research с диапазонами [min,max].
-Действия: wait, open_app, close_app, warmup_feed, browser_research, create_video_from_screenshots, publish_content.`
+	system := service.BuildLLMSystemPrompt(time.Now())
 	user := fmt.Sprintf("serial: %q\nПромпт: %s", serial, prompt)
 	body, _ := json.Marshal(map[string]any{
 		"model": c.model,

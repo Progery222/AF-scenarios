@@ -103,10 +103,14 @@ func summaryFromYAML(data []byte, serial, id string) (domain.ScenarioSummary, er
 	if meta.Serial == "" {
 		meta.Serial = serial
 	}
-	return domain.ScenarioSummary{
-		ID: meta.ID, Name: meta.Name, Serial: meta.Serial,
+	sum := domain.ScenarioSummary{
+		ID: id, Name: meta.Name, Serial: meta.Serial,
 		ValidFrom: meta.ValidFrom, ValidUntil: meta.ValidUntil,
-	}, nil
+	}
+	if meta.ID != "" && meta.ID != id {
+		sum.YamlID = meta.ID
+	}
+	return sum, nil
 }
 
 func (s *MinIOStore) GetFiles(ctx context.Context, serial, scenarioID string) (scenarioYAML, variablesYAML []byte, err error) {
@@ -148,6 +152,34 @@ func validateScenarioYAML(data []byte) error {
 	return nil
 }
 
+func (s *MinIOStore) activeKey(serial string) string {
+	return fmt.Sprintf("%s/%s/_active.json", s.prefix, serial)
+}
+
+func (s *MinIOStore) GetActiveScenarioID(ctx context.Context, serial string) (string, error) {
+	data, err := s.objects.Get(ctx, s.activeKey(serial))
+	if err != nil {
+		return "", nil
+	}
+	var meta domain.PhoneScenarioMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return "", nil
+	}
+	return meta.ActiveScenarioID, nil
+}
+
+func (s *MinIOStore) SetActiveScenarioID(ctx context.Context, serial, scenarioID string) error {
+	if serial == "" || scenarioID == "" {
+		return domain.ErrMissingID
+	}
+	if _, _, err := s.GetFiles(ctx, serial, scenarioID); err != nil {
+		return err
+	}
+	meta := domain.PhoneScenarioMeta{ActiveScenarioID: scenarioID}
+	data, _ := json.Marshal(meta)
+	return s.objects.Put(ctx, s.activeKey(serial), data, "application/json")
+}
+
 func (s *MinIOStore) Delete(ctx context.Context, serial, scenarioID string) error {
 	prefix := s.base(serial, scenarioID) + "/"
 	keys, err := s.objects.ListPrefix(ctx, prefix)
@@ -161,6 +193,10 @@ func (s *MinIOStore) Delete(ctx context.Context, serial, scenarioID string) erro
 		if err := s.objects.Delete(ctx, key); err != nil {
 			return err
 		}
+	}
+	active, _ := s.GetActiveScenarioID(ctx, serial)
+	if active == scenarioID {
+		_ = s.objects.Delete(ctx, s.activeKey(serial))
 	}
 	return nil
 }

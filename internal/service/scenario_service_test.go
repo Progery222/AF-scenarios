@@ -44,8 +44,11 @@ steps:
 		t.Fatal("empty scenario")
 	}
 	items, err := svc.List(ctx, "PHONE-1")
-	if err != nil || len(items) != 1 {
-		t.Fatalf("list: %v len=%d", err, len(items))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items.Items) != 1 {
+		t.Fatalf("list: len=%d", len(items.Items))
 	}
 }
 
@@ -120,3 +123,75 @@ func (r *recordingOrch) RunScenarioStep(_ context.Context, in port.RunStepInput)
 }
 
 var _ port.OrchestratorClient = (*recordingOrch)(nil)
+
+func TestSequential_DueStepChain(t *testing.T) {
+	store := repository.NewMemoryStore()
+	clock := fixedClock{t: time.Date(2026, 6, 30, 12, 0, 0, 0, time.FixedZone("MSK", 3*3600))}
+	svc := service.NewScenarioService(store, clock, nil)
+	ctx := context.Background()
+	yaml := `id: chain
+serial: PHONE-1
+valid_from: "2026-06-01T00:00:00+03:00"
+valid_until: "2026-12-31T23:59:59+03:00"
+schedule:
+  type: daily_recurring
+  execution: sequential
+steps:
+  - id: open
+    at: "12:00"
+    action: open_app
+  - id: warmup
+    after_previous: true
+    action: warmup_feed
+  - id: close
+    after_previous: true
+    after_failure: true
+    action: close_app
+`
+	_ = svc.Put(ctx, "PHONE-1", "chain", service.ScenarioFiles{ScenarioYAML: yaml})
+
+	step1, due1, _ := svc.DueStep(ctx, "PHONE-1", "chain")
+	if !due1 || step1.ID != "open" {
+		t.Fatalf("step1: due=%v id=%s", due1, step1.ID)
+	}
+	_ = svc.MarkStepDone(ctx, "PHONE-1", "chain", "open")
+
+	step2, due2, _ := svc.DueStep(ctx, "PHONE-1", "chain")
+	if !due2 || step2.ID != "warmup" {
+		t.Fatalf("step2 after open: due=%v id=%s", due2, step2.ID)
+	}
+	_ = svc.MarkStepFailed(ctx, "PHONE-1", "chain", "warmup")
+
+	step3, due3, _ := svc.DueStep(ctx, "PHONE-1", "chain")
+	if !due3 || step3.ID != "close" {
+		t.Fatalf("close after failed warmup: due=%v id=%s", due3, step3.ID)
+	}
+}
+
+func TestSequential_NotDueBeforeStart(t *testing.T) {
+	store := repository.NewMemoryStore()
+	clock := fixedClock{t: time.Date(2026, 6, 30, 11, 30, 0, 0, time.FixedZone("MSK", 3*3600))}
+	svc := service.NewScenarioService(store, clock, nil)
+	ctx := context.Background()
+	yaml := `id: chain
+serial: PHONE-1
+valid_from: "2026-06-01T00:00:00+03:00"
+valid_until: "2026-12-31T23:59:59+03:00"
+schedule:
+  type: daily_recurring
+  execution: sequential
+steps:
+  - id: open
+    at: "12:00"
+    action: open_app
+  - id: warmup
+    after_previous: true
+    action: warmup_feed
+`
+	_ = svc.Put(ctx, "PHONE-1", "chain", service.ScenarioFiles{ScenarioYAML: yaml})
+	_, due, _ := svc.DueStep(ctx, "PHONE-1", "chain")
+	if due {
+		t.Fatal("expected no step due before 12:00")
+	}
+}
+

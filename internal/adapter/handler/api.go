@@ -26,6 +26,7 @@ func NewAPI(svc *service.ScenarioService, store port.ScenarioRepository, orch po
 func (h *API) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/scenarios/generate", h.generate)
+	mux.HandleFunc("/scenarios/validate", h.validate)
 	mux.HandleFunc("/scenarios/", h.scenarios)
 	return mux
 }
@@ -43,16 +44,51 @@ func (h *API) generate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "укажите prompt"})
 		return
 	}
-	files, warnings, err := h.svc.GeneratePreview(r.Context(), body.Prompt, body.Serial)
+	files, warnings, issues, err := h.svc.GeneratePreview(r.Context(), body.Prompt, body.Serial)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	vr := h.svc.Validate(r.Context(), files.ScenarioYAML, files.VariablesYAML, body.Serial, true)
+	scenarioYAML := files.ScenarioYAML
+	if vr.NormalizedScenarioYAML != "" {
+		scenarioYAML = vr.NormalizedScenarioYAML
+	}
+	allWarnings := append(warnings, vr.Warnings...)
+	stepIssues := issues
+	if len(vr.StepIssues) > 0 {
+		stepIssues = vr.StepIssues
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"scenario_yaml":  files.ScenarioYAML,
-		"variables_yaml": files.VariablesYAML,
-		"warnings":       warnings,
+		"scenario_yaml":            scenarioYAML,
+		"variables_yaml":           files.VariablesYAML,
+		"normalized_scenario_yaml": scenarioYAML,
+		"warnings":                 allWarnings,
+		"step_issues":              stepIssues,
+		"valid":                    vr.Valid,
+		"errors":                   vr.Errors,
+		"steps_count":              vr.StepsCount,
+		"runnable_by_scheduler":    vr.RunnableByScheduler,
 	})
+}
+
+func (h *API) validate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "только POST", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		Serial         string `json:"serial"`
+		ScenarioYAML   string `json:"scenario_yaml"`
+		VariablesYAML  string `json:"variables_yaml"`
+		Normalize      bool   `json:"normalize"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ScenarioYAML == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "укажите scenario_yaml"})
+		return
+	}
+	result := h.svc.Validate(r.Context(), body.ScenarioYAML, body.VariablesYAML, body.Serial, body.Normalize)
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *API) scenarios(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +109,34 @@ func (h *API) scenarios(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"serial": serial, "items": items})
+		writeJSON(w, http.StatusOK, items)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "active" {
+		switch r.Method {
+		case http.MethodGet:
+			id, err := h.svc.GetActive(r.Context(), serial)
+			if err != nil {
+				writeSvcErr(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"serial": serial, "active_scenario_id": id})
+		case http.MethodPut:
+			var body struct {
+				ScenarioID string `json:"scenario_id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ScenarioID == "" {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "укажите scenario_id"})
+				return
+			}
+			if err := h.svc.SetActive(r.Context(), serial, body.ScenarioID); err != nil {
+				writeSvcErr(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"message": "активный сценарий установлен", "active_scenario_id": body.ScenarioID})
+		default:
+			http.Error(w, "GET/PUT /scenarios/{serial}/active", http.StatusMethodNotAllowed)
+		}
 		return
 	}
 	scenarioID := parts[1]

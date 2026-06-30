@@ -54,57 +54,84 @@ func (s *Scheduler) tick(ctx context.Context) {
 		s.log.Error("list scenarios", "error", err)
 		return
 	}
-	now := s.clock.Now()
 	for _, ref := range refs {
-		step, due, err := s.scenario.DueStep(ctx, ref.Serial, ref.ScenarioID)
-		if err != nil || !due {
+		active, _ := s.repo.GetActiveScenarioID(ctx, ref.Serial)
+		if active != "" && ref.ScenarioID != active {
 			continue
 		}
-		files, _ := s.scenario.Get(ctx, ref.Serial, ref.ScenarioID)
-		state, _ := s.repo.GetState(ctx, ref.Serial, ref.ScenarioID)
-		s.log.Info("запуск шага сценария", "serial", ref.Serial, "scenario", ref.ScenarioID, "step", step.ID, "action", step.Action)
-		entry := domain.LogEntry{
-			TS:         now.Format(time.RFC3339),
-			MSK:        FormatMSK(now),
-			Serial:     ref.Serial,
-			ScenarioID: ref.ScenarioID,
-			StepID:     step.ID,
-			Status:     "started",
-			Action:     step.Action,
+		if active == "" {
+			continue
 		}
-		_ = s.scenario.AppendLogEntry(ctx, ref.Serial, ref.ScenarioID, entry)
-
-		params := step.Params
-		if params == nil {
-			params = map[string]string{}
-		}
-		result, err := s.orch.RunScenarioStep(ctx, port.RunStepInput{
-			Serial:         ref.Serial,
-			ScenarioID:     ref.ScenarioID,
-			StepID:         step.ID,
-			Action:         step.Action,
-			Params:         params,
-			Uses:           step.Uses,
-			VariablesYAML:  files.VariablesYAML,
-			ScenarioYAML:   files.ScenarioYAML,
-			ScreenshotKeys: state.ScreenshotKeys,
-			VideoOutputKey: state.VideoOutputKey,
-		})
+		doc, err := s.repo.ParseScenario(ctx, ref.Serial, ref.ScenarioID)
 		if err != nil {
-			s.log.Error("RunScenarioStep", "error", err, "step", step.ID)
-			fail := entry
-			fail.Status = "failed"
-			fail.Error = err.Error()
-			_ = s.scenario.AppendLogEntry(ctx, ref.Serial, ref.ScenarioID, fail)
 			continue
 		}
-		_ = s.scenario.ApplyStepResult(ctx, ref.Serial, ref.ScenarioID, step.ID, result)
-		done := entry
-		done.Status = "completed"
-		if result.Message != "" {
-			done.Error = result.Message
+		sequential := IsSequentialExecution(doc)
+		const maxChain = 16
+		for n := 0; n < maxChain; n++ {
+			step, due, err := s.scenario.DueStep(ctx, ref.Serial, ref.ScenarioID)
+			if err != nil || !due {
+				break
+			}
+			cont := s.runStep(ctx, ref.Serial, ref.ScenarioID, step)
+			if !sequential || !cont {
+				break
+			}
 		}
-		line, _ := json.Marshal(done)
-		_ = s.repo.AppendLog(ctx, ref.Serial, ref.ScenarioID, now.Format("2006-01-02"), append(line, '\n'))
 	}
+}
+
+func (s *Scheduler) runStep(ctx context.Context, serial, scenarioID string, step domain.StepDoc) bool {
+	now := s.clock.Now()
+	files, _ := s.scenario.Get(ctx, serial, scenarioID)
+	state, _ := s.repo.GetState(ctx, serial, scenarioID)
+	_ = s.scenario.SetStepRunning(ctx, serial, scenarioID, step.ID)
+	s.log.Info("запуск шага сценария", "serial", serial, "scenario", scenarioID, "step", step.ID, "action", step.Action)
+	entry := domain.LogEntry{
+		TS:         now.Format(time.RFC3339),
+		MSK:        FormatMSK(now),
+		Serial:     serial,
+		ScenarioID: scenarioID,
+		StepID:     step.ID,
+		Status:     "started",
+		Action:     step.Action,
+	}
+	_ = s.scenario.AppendLogEntry(ctx, serial, scenarioID, entry)
+
+	params := step.Params
+	if params == nil {
+		params = map[string]string{}
+	}
+	result, err := s.orch.RunScenarioStep(ctx, port.RunStepInput{
+		Serial:         serial,
+		ScenarioID:     scenarioID,
+		StepID:         step.ID,
+		Action:         step.Action,
+		Params:         params,
+		Uses:           step.Uses,
+		VariablesYAML:  files.VariablesYAML,
+		ScenarioYAML:   files.ScenarioYAML,
+		ScreenshotKeys: state.ScreenshotKeys,
+		VideoOutputKey: state.VideoOutputKey,
+	})
+	if err != nil {
+		s.log.Error("RunScenarioStep", "error", err, "step", step.ID)
+		fail := entry
+		fail.Status = "failed"
+		fail.Error = err.Error()
+		_ = s.scenario.AppendLogEntry(ctx, serial, scenarioID, fail)
+		_ = s.scenario.MarkStepFailed(ctx, serial, scenarioID, step.ID)
+		line, _ := json.Marshal(fail)
+		_ = s.repo.AppendLog(ctx, serial, scenarioID, now.Format("2006-01-02"), append(line, '\n'))
+		return true // в sequential цепочке продолжаем (например close_app)
+	}
+	_ = s.scenario.ApplyStepResult(ctx, serial, scenarioID, step.ID, result)
+	done := entry
+	done.Status = "completed"
+	if result.Message != "" {
+		done.Error = result.Message
+	}
+	line, _ := json.Marshal(done)
+	_ = s.repo.AppendLog(ctx, serial, scenarioID, now.Format("2006-01-02"), append(line, '\n'))
+	return true
 }

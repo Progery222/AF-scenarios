@@ -24,6 +24,8 @@ type Config struct {
 	SchedulerEnabled      bool
 	LLMProvider           string
 	LLMAPIKey             string
+	OllamaURL             string
+	OllamaModel           string
 	OpenAIAPIKey          string
 	OpenAIBaseURL         string
 	OpenAIModel           string
@@ -46,8 +48,10 @@ func Load() Config {
 		OrchestratorHTTPAddr: env("ORCHESTRATOR_HTTP_ADDR", "http://127.0.0.1:9092"),
 		SchedulerInterval:    envDuration("SCHEDULER_INTERVAL", time.Minute),
 		SchedulerEnabled:     envBool("SCHEDULER_ENABLED", true),
-		LLMProvider:          env("LLM_PROVIDER", "openai"),
+		LLMProvider:          env("LLM_PROVIDER", "ollama"),
 		LLMAPIKey:            env("LLM_API_KEY", ""),
+		OllamaURL:            env("OLLAMA_URL", "http://host.docker.internal:11434"),
+		OllamaModel:          env("OLLAMA_MODEL", "qwen2.5:7b"),
 		OpenAIAPIKey:         env("OPENAI_API_KEY", ""),
 		OpenAIBaseURL:        env("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		OpenAIModel:          env("OPENAI_MODEL", "gpt-4o-mini"),

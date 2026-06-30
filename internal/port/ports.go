@@ -26,6 +26,8 @@ type ScenarioRepository interface {
 	GetLogs(ctx context.Context, serial, scenarioID, date string) ([]byte, error)
 	ListAllScenarioPaths(ctx context.Context) ([]domain.ScenarioRef, error)
 	ParseScenario(ctx context.Context, serial, scenarioID string) (domain.ScenarioDoc, error)
+	GetActiveScenarioID(ctx context.Context, serial string) (string, error)
+	SetActiveScenarioID(ctx context.Context, serial, scenarioID string) error
 }
 
 type RunStepInput struct {
