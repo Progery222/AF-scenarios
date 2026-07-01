@@ -36,7 +36,9 @@ func BuildLLMSystemPrompt(now time.Time) string {
 - open_app / close_app (params.package)
 - warmup_feed (params.profile, params.phase, params.until) — свайпы FYP TikTok
 - browser_research (uses: content_sources.browser_research) — Chrome+Google, НЕ TikTok
-- social_action (params.network: tiktok|instagram|youtube, params.behavior: launch|feed|search-feed|comment|open-tab|chat, params.query, params.count, params.like_probability, params.duration_sec) — поиск/лента через behavior-engine
+- social_action (params.network: tiktok|instagram|youtube, params.behavior: launch|feed|search-feed|comment|open-tab|chat, params.query, params.count, params.like_probability, params.duration_sec, params.skip_launch) — поиск/лента через behavior-engine
+  - search-feed: открывает поиск → ввод query (с очисткой поля) → Enter/Search → вкладка Videos → тап по 1-му видео в сетке (180,520 на 720×1600 при промахе UI) → scroll count раз
+  - для цепочки Football: open_first_only: "true", count: "0" в search-feed, затем wait 3–5 с, затем warmup_feed (скролл как при прогреве), затем close_app
 - create_video_from_screenshots, publish_content
 - custom_execute (params.steps_json — JSON-массив [{type,sec,x,y,...}])
 
@@ -86,10 +88,21 @@ steps:
     params:
       network: tiktok
       behavior: search-feed
-      query: футбол
-      count: "5"
-      duration_sec: "120"
+      query: Football
+      count: "0"
+      open_first_only: "true"
       skip_launch: "true"
+  - id: wait_after_search
+    after_previous: true
+    action: wait
+    params:
+      duration_sec: "4"
+  - id: scroll_after_search
+    after_previous: true
+    action: warmup_feed
+    params:
+      profile: tiktok_daily
+      phase: pre_publish
   - id: close_tiktok
     after_previous: true
     after_failure: true

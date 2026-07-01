@@ -57,6 +57,22 @@ func (s *ScenarioService) NextStepRunNow(ctx context.Context, serial, scenarioID
 
 // RunNow запускает полную цепочку выбранных сценариев на одном телефоне (последовательно).
 func (s *Scheduler) RunNow(ctx context.Context, serial string, scenarioIDs []string) []RunNowOutcome {
+	if !s.tryAcquireSerial(serial) {
+		out := make([]RunNowOutcome, 0, len(scenarioIDs))
+		for _, id := range scenarioIDs {
+			if id == "" {
+				continue
+			}
+			out = append(out, RunNowOutcome{
+				ScenarioID: id,
+				Status:     "failed",
+				Error:      "на телефоне уже выполняется сценарий (дождитесь завершения или не нажимайте повторно)",
+			})
+		}
+		return out
+	}
+	defer s.releaseSerial(serial)
+
 	out := make([]RunNowOutcome, 0, len(scenarioIDs))
 	for _, id := range scenarioIDs {
 		if id == "" {

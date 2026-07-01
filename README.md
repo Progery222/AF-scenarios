@@ -155,6 +155,6 @@ powershell -ExecutionPolicy Bypass -File scripts\deploy-scenarios-stack.ps1
 
 | Сервис | Роль |
 |--------|------|
-| [AF-phone-orchestrator](../AF-orkestrator/README.md) | run-step, warmup_feed, apps |
+| [AF-phone-orchestrator](../AF-phone-orchestrator/README.md) | run-step, warmup_feed, apps |
 | [AF-behavior-engine](../AF-behavior-engine/README.md) | social_action |
 | [AF-frontend](../AF-frontend/README.md) | UI `/scenarios` |

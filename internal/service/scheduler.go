@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"time"
 
 	"github.com/mobilefarm/af/scenarios/internal/domain"
@@ -16,6 +17,9 @@ type Scheduler struct {
 	clock    port.Clock
 	interval time.Duration
 	log      port.Logger
+
+	runSerialMu sync.Mutex
+	runSerial   map[string]struct{} // serial → run-now или цепочка в процессе
 }
 
 func NewScheduler(
@@ -29,7 +33,31 @@ func NewScheduler(
 	return &Scheduler{
 		repo: repo, scenario: scenario, orch: orch,
 		clock: clock, interval: interval, log: log,
+		runSerial: make(map[string]struct{}),
 	}
+}
+
+func (s *Scheduler) tryAcquireSerial(serial string) bool {
+	s.runSerialMu.Lock()
+	defer s.runSerialMu.Unlock()
+	if _, busy := s.runSerial[serial]; busy {
+		return false
+	}
+	s.runSerial[serial] = struct{}{}
+	return true
+}
+
+func (s *Scheduler) releaseSerial(serial string) {
+	s.runSerialMu.Lock()
+	delete(s.runSerial, serial)
+	s.runSerialMu.Unlock()
+}
+
+func (s *Scheduler) serialBusy(serial string) bool {
+	s.runSerialMu.Lock()
+	defer s.runSerialMu.Unlock()
+	_, busy := s.runSerial[serial]
+	return busy
 }
 
 func (s *Scheduler) Run(ctx context.Context) {
@@ -55,6 +83,9 @@ func (s *Scheduler) tick(ctx context.Context) {
 		return
 	}
 	for _, ref := range refs {
+		if s.serialBusy(ref.Serial) {
+			continue
+		}
 		active, _ := s.repo.GetActiveScenarioID(ctx, ref.Serial)
 		if active != "" && ref.ScenarioID != active {
 			continue

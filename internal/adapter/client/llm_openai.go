@@ -29,7 +29,7 @@ func NewOpenAILLM(cfg config.Config, log port.Logger) *OpenAILLM {
 	key := firstNonEmpty(cfg.OpenAIAPIKey, cfg.LLMAPIKey)
 	return &OpenAILLM{
 		apiKey: key, baseURL: base, model: model,
-		client: &http.Client{Timeout: 120 * time.Second},
+		client: &http.Client{Timeout: 10 * time.Minute},
 		log:    log,
 	}
 }

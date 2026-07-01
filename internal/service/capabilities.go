@@ -11,6 +11,7 @@ var validActions = map[string]struct{}{
 	"publish_content":                 {},
 	"social_action":                   {},
 	"custom_execute":                  {},
+	"device_control":                  {},
 }
 
 // actionAliases — маппинг частых галлюцинаций LLM на реальный DSL.

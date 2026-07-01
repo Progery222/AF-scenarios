@@ -190,6 +190,15 @@ func validateStepParams(step domain.StepDoc, result *ValidateResult) {
 			})
 			result.Valid = false
 		}
+	case "device_control":
+		kind := strings.TrimSpace(p["kind"])
+		if kind == "" {
+			result.StepIssues = append(result.StepIssues, StepIssue{
+				StepID: step.ID, Action: step.Action, Level: "error",
+				Message: "params.kind обязателен",
+			})
+			result.Valid = false
+		}
 	case "create_video_from_screenshots":
 		if p["screenshot_prefix"] == "" && p["min_count"] == "" {
 			result.StepIssues = append(result.StepIssues, StepIssue{

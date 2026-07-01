@@ -50,7 +50,7 @@ func sequentialStepDue(step domain.StepDoc, index int, steps []domain.StepDoc, n
 	if stepDoneToday(step.ID, state) {
 		return false
 	}
-	if state.StepRunning != "" && state.StepRunning != step.ID {
+	if state.StepRunning != "" {
 		return false
 	}
 	if index == 0 {
@@ -75,7 +75,7 @@ func sequentialStepDueRunNow(step domain.StepDoc, index int, steps []domain.Step
 	if stepDoneToday(step.ID, state) {
 		return false
 	}
-	if state.StepRunning != "" && state.StepRunning != step.ID {
+	if state.StepRunning != "" {
 		return false
 	}
 	if index == 0 {
